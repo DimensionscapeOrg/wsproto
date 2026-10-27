@@ -1,0 +1,2 @@
+common.hxml
+--jvm ../export/tests.jar

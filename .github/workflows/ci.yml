@@ -1,0 +1,42 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  wsproto:
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS on Intel: Haxe 4.3.7 publishes no macOS arm64 build, so
+        # setup-haxe refuses an Apple Silicon runner ("arm64 not supported")
+        os: [windows-latest, ubuntu-22.04, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      # v2: v1 installs Neko where the macOS haxelib cannot load libneko
+      - uses: krdlab/setup-haxe@v2
+        with:
+          haxe-version: 4.3.7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install libraries
+        run: |
+          haxelib install utest 1.13.2 --always --quiet
+          haxelib install hxnodejs 12.2.0 --always --quiet
+          haxelib install hxcpp --always --quiet
+      - name: Interpreter
+        working-directory: tests
+        run: haxe interp.hxml
+      - name: Neko
+        working-directory: tests
+        run: haxe neko.hxml && neko ../export/tests.n
+      - name: Node.js
+        working-directory: tests
+        run: haxe js.hxml && node ../export/tests.js
+      - name: hxcpp
+        working-directory: tests
+        shell: bash
+        timeout-minutes: 10
+        run: haxe cpp.hxml && ../export/cpp/TestMain

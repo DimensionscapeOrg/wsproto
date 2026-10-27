@@ -1,0 +1,11 @@
+{
+ "name": "wsproto",
+ "version": "1.0.0",
+ "url": "https://github.com/DimensionscapeOrg/wsproto",
+ "license": "Apache",
+ "classPath": "src",
+ "contributors": ["Dimensionscape"],
+ "description": "The WebSocket protocol (RFC 6455, with RFC 7692 compression) without its connection, for client and server sessions, independent of application frameworks.",
+ "tags": ["websocket", "ws", "rfc6455", "network", "cross"],
+ "releasenote": "Initial release: the opening handshake, framing and closing handshake of CrossByte's WebSocket, for any host that moves the bytes."
+}
