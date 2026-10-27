@@ -9,6 +9,9 @@ class TestMain {
 		runner.addCase(new wsproto.TextTest());
 		runner.addCase(new wsproto.SessionTest());
 		runner.addCase(new wsproto.FuzzTest());
+		#if (cpp || hl || neko)
+		runner.addCase(new wsproto.SocketTest());
+		#end
 		#if sys
 		// Each test is named as it starts, so a run that hangs shows where
 		runner.onTestStart.add(function(handler) {
