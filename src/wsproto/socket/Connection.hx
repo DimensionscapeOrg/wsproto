@@ -263,7 +263,13 @@ class Connection extends Session {
 					var ca:Null<sys.ssl.Certificate> = authority;
 					if (ca == null) {
 						if (__defaultCA == null) {
-							__defaultCA = sys.ssl.Certificate.loadDefaults();
+							// A system list that cannot be read leaves none, and
+							// the certificate is then rejected with nothing to
+							// check it against, rather than the connect failing
+							// before it starts
+							try {
+								__defaultCA = sys.ssl.Certificate.loadDefaults();
+							} catch (_:Dynamic) {}
 						}
 						ca = __defaultCA;
 					}
