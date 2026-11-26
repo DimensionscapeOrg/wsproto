@@ -84,7 +84,9 @@ class Connection extends Session {
 	/**
 		Whether a `wss://` server's certificate is checked against the
 		trusted authorities (`certificateAuthority`, or the system's) and the
-		URL's host name. On by default. Set before `connect`.
+		URL's host name. On by default. Set before `connect`. A certificate
+		that does not verify is reported as
+		`ConnectionError.CERTIFICATE_REJECTED`.
 
 		Neko's TLS checks a certificate whatever this says: there, trust a
 		server's own certificate through `certificateAuthority` instead.
@@ -245,11 +247,12 @@ class Connection extends Session {
 	}
 
 	// A client's connect, on its own thread: the socket, connected (and for
-	// wss://, its TLS handshake done), or why it is not.
+	// wss://, its TLS handshake done), or a DialFailure saying why it is not.
 	private static function __open(host:String, port:Int, secure:Bool, verify:Bool, authority:Dynamic):Dynamic {
+		var socket:Null<FlexSocket> = null;
 		try {
 			var address:Host = new Host(host);
-			var socket:FlexSocket = new FlexSocket(secure);
+			socket = new FlexSocket(secure);
 
 			#if (cpp || hl || neko)
 			if (secure) {
@@ -274,7 +277,14 @@ class Connection extends Session {
 			socket.connectHost(address, port);
 			return socket;
 		} catch (e:Dynamic) {
-			return Std.string(e);
+			var error:ConnectionError = ConnectionError.CONNECT_FAILED;
+			#if (cpp || hl || neko)
+			var tls:Null<TlsSocket> = socket != null ? Std.downcast((socket : sys.net.Socket), TlsSocket) : null;
+			if (tls != null && tls.certificateRejected(e)) {
+				error = ConnectionError.CERTIFICATE_REJECTED;
+			}
+			#end
+			return new DialFailure(Std.string(e), error);
 		}
 	}
 
@@ -284,8 +294,9 @@ class Connection extends Session {
 		__dial = null;
 		#end
 
-		if (Std.isOfType(result, String)) {
-			__onError("Failed to connect to server: " + result, ConnectionError.CONNECT_FAILED);
+		if (Std.isOfType(result, DialFailure)) {
+			var failure:DialFailure = cast result;
+			__onError("Failed to connect to server: " + failure.message, failure.error);
 			__close(1006);
 			return;
 		}
@@ -962,6 +973,17 @@ private class MaskPool {
 		}
 		Connection.__fill(bytes, 0, bytes.length);
 		__at = 0;
+	}
+}
+
+/** Why a client's connect failed, as the thread that made it found. **/
+private class DialFailure {
+	public var message(default, null):String;
+	public var error(default, null):ConnectionError;
+
+	public function new(message:String, error:ConnectionError) {
+		this.message = message;
+		this.error = error;
 	}
 }
 #end

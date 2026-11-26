@@ -228,7 +228,7 @@ class SocketTest extends utest.Test {
 		client.connect("wss://127.0.0.1:" + server.localPort + "/");
 		Assert.isTrue(pump(() -> closed != -1, 10), "the untrusted certificate was not reported");
 		Assert.equals(1006, closed);
-		Assert.equals(ConnectionError.CONNECT_FAILED, errors[0]);
+		Assert.equals(ConnectionError.CERTIFICATE_REJECTED, errors[0]);
 	}
 
 	#if (cpp || hl)

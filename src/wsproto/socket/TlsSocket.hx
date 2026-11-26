@@ -42,6 +42,52 @@ import sys.ssl.Context;
 @:access(sys.net.Socket)
 @:access(sys.ssl.Socket)
 class TlsSocket extends sys.ssl.Socket {
+	// mbedTLS's MBEDTLS_ERR_X509_CERT_VERIFY_FAILED, the same in its 2.x
+	// and 3.x lines, and the start of its own description of it.
+	@:noCompletion private static inline var CERT_VERIFY_FAILED:Int = -0x2700;
+	@:noCompletion private static inline var CERT_VERIFY_FAILED_TEXT:String = "X509 - Certificate verification failed";
+
+	/**
+		Whether `thrown`, what this client's `connect` threw, means the
+		server's certificate did not verify: no trusted authority issued it,
+		it names another host, or it is out of date. Where the target keeps
+		the verification's result (hxcpp and Neko) the TLS context is asked;
+		HashLink's handshake answers mbedTLS's code, which `handshake` keeps.
+		A HashLink from before that throws mbedTLS's description instead,
+		which is all there is to read there.
+	**/
+	public function certificateRejected(thrown:Dynamic):Bool {
+		#if cpp
+		if (ssl == null) {
+			return false;
+		}
+		try {
+			return !cpp.NativeSsl.ssl_get_verify_result(ssl);
+		} catch (_:Dynamic) {
+			// "not available": the handshake failed before any certificate
+			return false;
+		}
+		#elseif neko
+		if (ssl == null) {
+			return false;
+		}
+		try {
+			return !__getVerifyResult(ssl);
+		} catch (_:Dynamic) {
+			return false;
+		}
+		#else
+		if (__handshakeCode == CERT_VERIFY_FAILED) {
+			return true;
+		}
+		return thrown != null && Std.string(thrown).indexOf(CERT_VERIFY_FAILED_TEXT) >= 0;
+		#end
+	}
+
+	#if neko
+	@:noCompletion private static var __getVerifyResult = neko.Lib.loadLazy("ssl", "ssl_get_verify_result", 1);
+	#end
+
 	#if hl
 	/**
 		What mbedTLS is handed for its callbacks: this socket and the two
@@ -49,6 +95,39 @@ class TlsSocket extends sys.ssl.Socket {
 		does not scan, so this field is what keeps it alive.
 	**/
 	@:noCompletion private var __bio:hl.NativeArray<Dynamic>;
+
+	// The mbedTLS code the last handshake failed with, or 0
+	@:noCompletion private var __handshakeCode:Int = 0;
+
+	/**
+		The standard library's handshake, keeping why it failed. HashLink
+		answers mbedTLS's code for a failed handshake, since 848759c6 (May
+		2026), where it threw mbedTLS's description before; the standard
+		library of Haxe 4.3 turns every code it does not expect into
+		`haxe.io.Eof`, so a server whose certificate did not verify, or one
+		that does not speak TLS, read as one that hung up. A failure here is
+		thrown as what mbedTLS calls it, and its code is kept for
+		`certificateRejected`.
+	**/
+	public override function handshake():Void {
+		if (handshakeDone) {
+			return;
+		}
+		var r:Int = ssl.handshake();
+		if (r == 0) {
+			handshakeDone = true;
+		} else if (r == -1) {
+			throw haxe.io.Error.Blocked;
+		} else if (r == -2) {
+			throw new haxe.io.Eof();
+		} else {
+			__handshakeCode = r;
+			if (r == CERT_VERIFY_FAILED) {
+				throw CERT_VERIFY_FAILED_TEXT + ", e.g. CRL, CA or signature check failed";
+			}
+			throw "TLS handshake failed: mbedTLS error -0x" + StringTools.hex(-r, 4);
+		}
+	}
 
 	/** The standard library's `connect`, with the callbacks installed before the handshake. **/
 	public override function connect(host:sys.net.Host, port:Int):Void {
