@@ -251,8 +251,24 @@ class Connection extends Session {
 	private static function __open(host:String, port:Int, secure:Bool, verify:Bool, authority:Dynamic):Dynamic {
 		var socket:Null<FlexSocket> = null;
 		try {
-			var address:Host = new Host(host);
 			socket = new FlexSocket(secure);
+		} catch (e:Dynamic) {
+			return new DialFailure(Std.string(e), ConnectionError.CONNECT_FAILED);
+		}
+		return __connect(socket, host, port, secure, verify, authority);
+	}
+
+	// `socket`, connected, or a DialFailure saying why it is not. A function
+	// of its own so that its `catch` reads only what it was handed. On
+	// HashLink, Haxe before 4.3 does not carry into a `catch` what a local
+	// was assigned inside its `try`: its optimizer saw no way from the middle
+	// of a `try` to the `catch`, and took the assignment for one nothing read.
+	// Made inside the `try`, the socket was null in the `catch`, so no failed
+	// connect was asked whether a certificate was why, and every one of them
+	// was CONNECT_FAILED.
+	private static function __connect(socket:FlexSocket, host:String, port:Int, secure:Bool, verify:Bool, authority:Dynamic):Dynamic {
+		try {
+			var address:Host = new Host(host);
 
 			#if (cpp || hl || neko)
 			if (secure) {
@@ -285,7 +301,7 @@ class Connection extends Session {
 		} catch (e:Dynamic) {
 			var error:ConnectionError = ConnectionError.CONNECT_FAILED;
 			#if (cpp || hl || neko)
-			var tls:Null<TlsSocket> = socket != null ? Std.downcast((socket : sys.net.Socket), TlsSocket) : null;
+			var tls:Null<TlsSocket> = Std.downcast((socket : sys.net.Socket), TlsSocket);
 			if (tls != null && tls.certificateRejected(e)) {
 				error = ConnectionError.CERTIFICATE_REJECTED;
 			}
