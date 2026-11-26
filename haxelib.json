@@ -1,11 +1,11 @@
 {
  "name": "wsproto",
- "version": "1.0.0",
+ "version": "1.1.0",
  "url": "https://github.com/DimensionscapeOrg/wsproto",
  "license": "Apache",
  "classPath": "src",
  "contributors": ["Dimensionscape"],
  "description": "The WebSocket protocol (RFC 6455, with RFC 7692 compression) for client and server sessions, and ws:// and wss:// clients and servers over Haxe's own sockets, independent of application frameworks.",
  "tags": ["websocket", "ws", "rfc6455", "network", "cross"],
- "releasenote": "Initial release: CrossByte's WebSocket protocol, for any host that moves the bytes, and clients and servers over Haxe's own sockets, ws:// and wss://, for any that does not."
+ "releasenote": "A wss:// client whose server's certificate does not verify reports ConnectionError.CERTIFICATE_REJECTED, where it reported CONNECT_FAILED. On HashLink, a failed TLS handshake says why, where it read as Eof."
 }
