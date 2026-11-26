@@ -1,11 +1,11 @@
 {
  "name": "wsproto",
- "version": "1.1.1",
+ "version": "1.1.2",
  "url": "https://github.com/DimensionscapeOrg/wsproto",
  "license": "Apache",
  "classPath": "src",
  "contributors": ["Dimensionscape"],
  "description": "The WebSocket protocol (RFC 6455, with RFC 7692 compression) for client and server sessions, and ws:// and wss:// clients and servers over Haxe's own sockets, independent of application frameworks.",
  "tags": ["websocket", "ws", "rfc6455", "network", "cross"],
- "releasenote": "On HashLink, a failed TLS handshake is described as mbedTLS describes it, and a certificate rejected for its key or usage, or with no authority to check it against, reports CERTIFICATE_REJECTED. A system list of authorities that cannot be read no longer fails a wss:// connect before it starts."
+ "releasenote": "On HashLink built with Haxe before 4.3, a wss:// client whose server's certificate does not verify reports CERTIFICATE_REJECTED, where it reported CONNECT_FAILED."
 }
