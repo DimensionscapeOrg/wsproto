@@ -231,6 +231,80 @@ class SocketTest extends utest.Test {
 		Assert.equals(ConnectionError.CERTIFICATE_REJECTED, errors[0]);
 	}
 
+	public function testACertificateForAnotherHostIsRejected():Void {
+		// Trusted, but for other.example, where the client asked for localhost
+		var server:Server = secureServer(TestCertificate.OTHER_HOST_CERTIFICATE, TestCertificate.OTHER_HOST_KEY);
+		var client:Connection = track(new Connection(__loop));
+		client.certificateAuthority = sys.ssl.Certificate.fromString(TestCertificate.OTHER_HOST_CERTIFICATE);
+		var failure:Failure = failedConnect(client, "wss://localhost:" + server.localPort + "/");
+		Assert.equals(1006, failure.closed);
+		Assert.equals(Std.string([ConnectionError.CERTIFICATE_REJECTED]), Std.string(failure.errors), "the errors: " + failure.messages.join(" | "));
+	}
+
+	public function testAnOutOfDateCertificateIsRejected():Void {
+		// Trusted, and for localhost, but good only from 2020 to 2021
+		var server:Server = secureServer(TestCertificate.EXPIRED_CERTIFICATE, TestCertificate.EXPIRED_KEY);
+		var client:Connection = track(new Connection(__loop));
+		client.certificateAuthority = sys.ssl.Certificate.fromString(TestCertificate.EXPIRED_CERTIFICATE);
+		var failure:Failure = failedConnect(client, "wss://localhost:" + server.localPort + "/");
+		Assert.equals(1006, failure.closed);
+		Assert.equals(Std.string([ConnectionError.CERTIFICATE_REJECTED]), Std.string(failure.errors), "the errors: " + failure.messages.join(" | "));
+	}
+
+	public function testASecureConnectToAServerWithoutTlsFails():Void {
+		// A plain listener that answers HTTP: no certificate was ever presented, so none was
+		// rejected. The message says what TLS failed on, where an error code once came back from
+		// the handshake as haxe.io.Eof.
+		var listener:sys.net.Socket = new sys.net.Socket();
+		listener.bind(new sys.net.Host("127.0.0.1"), 0);
+		listener.listen(1);
+		listener.setBlocking(false);
+		var port:Int = listener.host().port;
+
+		var client:Connection = trusting(track(new Connection(__loop)));
+		var accepted:Null<sys.net.Socket> = null;
+		var failure:Failure = failedConnect(client, "wss://localhost:" + port + "/", () -> {
+			if (accepted == null) {
+				try {
+					accepted = listener.accept();
+					accepted.output.writeString("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n");
+				} catch (_:Dynamic) {}
+			}
+		});
+
+		Assert.equals(1006, failure.closed);
+		Assert.equals(Std.string([ConnectionError.CONNECT_FAILED]), Std.string(failure.errors), "the errors: " + failure.messages.join(" | "));
+
+		var message:String = failure.messages.length > 0 ? failure.messages[0] : "";
+		Assert.isTrue(message.toUpperCase().indexOf("SSL") > -1, "the message names no TLS failure: " + message);
+		Assert.isFalse(StringTools.endsWith(StringTools.trim(message), "Eof"), "the message ends in Eof: " + message);
+
+		if (accepted != null) {
+			accepted.close();
+		}
+		listener.close();
+	}
+
+	public function testASecureConnectHungUpOnFails():Void {
+		// A listener that takes the connection and closes it before any TLS is spoken
+		var listener:sys.net.Socket = new sys.net.Socket();
+		listener.bind(new sys.net.Host("127.0.0.1"), 0);
+		listener.listen(1);
+		listener.setBlocking(false);
+		var port:Int = listener.host().port;
+
+		var client:Connection = trusting(track(new Connection(__loop)));
+		var failure:Failure = failedConnect(client, "wss://localhost:" + port + "/", () -> {
+			try {
+				listener.accept().close();
+			} catch (_:Dynamic) {}
+		});
+
+		Assert.equals(1006, failure.closed);
+		Assert.equals(Std.string([ConnectionError.CONNECT_FAILED]), Std.string(failure.errors), "the errors: " + failure.messages.join(" | "));
+		listener.close();
+	}
+
 	#if (cpp || hl)
 	public function testVerificationCanBeTurnedOff():Void {
 		var server:Server = echoServer(true);
@@ -311,7 +385,41 @@ class SocketTest extends utest.Test {
 		return server;
 	}
 
-	// A client that trusts the test certificate, for wss://localhost
+	private function secureServer(certificate:String, key:String):Server {
+		var server:Server = trackServer(new Server(__loop));
+		server.setCertificate(sys.ssl.Certificate.fromString(certificate), sys.ssl.Key.readPEM(key, false));
+		server.onConnection = connection -> connection.onText = text -> connection.sendText(text);
+		Assert.isTrue(server.listen(0, "127.0.0.1"), "the server did not listen: " + server.error);
+		return server;
+	}
+
+	/**
+		Connects `client` to `url` and waits for its close, calling `each` meanwhile, then a moment
+		longer for anything that would follow, and gives back what it reported.
+	**/
+	private function failedConnect(client:Connection, url:String, ?each:Void->Void):Failure {
+		var failure:Failure = {errors: [], messages: [], closed: -1};
+		var opened:Bool = false;
+		client.onOpen = () -> opened = true;
+		client.onError = (error, message) -> {
+			failure.errors.push(error);
+			failure.messages.push(message);
+		};
+		client.onClose = (code, _) -> failure.closed = code;
+		client.connect(url, null, 5);
+
+		Assert.isTrue(pump(() -> {
+			if (each != null) {
+				each();
+			}
+			return failure.closed != -1;
+		}, 10), "the failed connect to " + url + " was not reported");
+		pump(() -> false, 0.2);
+		Assert.isFalse(opened, "the connect to " + url + " opened");
+		return failure;
+	}
+
+	// A client that trusts the test certificate, for wss://localhost	// A client that trusts the test certificate, for wss://localhost
 	private function trusting(connection:Connection):Connection {
 		connection.certificateAuthority = sys.ssl.Certificate.fromString(TestCertificate.CERTIFICATE);
 		return connection;
@@ -346,5 +454,11 @@ class SocketTest extends utest.Test {
 		}
 		return bytes;
 	}
+}
+/** What a client reported of a connect that failed **/
+private typedef Failure = {
+	var errors:Array<ConnectionError>;
+	var messages:Array<String>;
+	var closed:Int;
 }
 #end
